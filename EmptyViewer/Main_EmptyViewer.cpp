@@ -18,77 +18,75 @@
 
 using namespace glm;
 
-// ---------------------------------------------------------------------
-// Class Definitions
-// ---------------------------------------------------------------------
+// --------------------------
+// 기본 클래스 정의
+// --------------------------
 
-// Ray class: 정의된 원점과 정규화된 방향을 가짐
+// Ray: 광선의 원점과 정규화된 방향
 class Ray {
 public:
-    glm::vec3 origin;
-    glm::vec3 direction;
-    Ray(const glm::vec3& o, const glm::vec3& d)
-        : origin(o), direction(glm::normalize(d)) { }
+    vec3 origin;
+    vec3 direction;
+    Ray(const vec3& o, const vec3& d) : origin(o), direction(normalize(d)) { }
 };
 
-// Abstract base class for scene objects (Surface)
+// Surface: 모든 장면 객체가 상속받을 추상 클래스
 class Surface {
 public:
     virtual ~Surface() {}
-    // 주어진 Ray와의 교차 t값을 반환 (교차하지 않으면 음수)
+    // 주어진 ray와의 교차 t값 (교차하지 않으면 음수)
     virtual float intersect(const Ray& ray) const = 0;
 };
 
-// Sphere 클래스
+// Sphere: 구체, 교차 계산은 기본 2차 방정식 풀이 사용
 class Sphere : public Surface {
 public:
-    glm::vec3 center;
+    vec3 center;
     float radius;
-    Sphere(const glm::vec3& c, float r) : center(c), radius(r) { }
+    Sphere(const vec3& c, float r) : center(c), radius(r) { }
     virtual float intersect(const Ray& ray) const override {
-        glm::vec3 oc = ray.origin - center;
-        float b = 2.0f * glm::dot(ray.direction, oc);
-        float c_val = glm::dot(oc, oc) - radius * radius;
+        vec3 oc = ray.origin - center;
+        float b = 2.0f * dot(ray.direction, oc);
+        float c_val = dot(oc, oc) - radius * radius;
         float disc = b * b - 4.0f * c_val;
         if (disc < 0.0f) return -1.0f;
         float sqrtDisc = sqrtf(disc);
-        float t1 = (-b - sqrtDisc) * 0.5f;
-        float t2 = (-b + sqrtDisc) * 0.5f;
+        float t1 = (-b - sqrtDisc) / 2.0f;
+        float t2 = (-b + sqrtDisc) / 2.0f;
         if (t1 > 0.001f) return t1;
         if (t2 > 0.001f) return t2;
         return -1.0f;
     }
 };
 
-// Plane 클래스 (여기서는 y = constant 평면)
+// Plane: y = constant 평면
 class Plane : public Surface {
 public:
     float y;
     Plane(float yVal) : y(yVal) { }
     virtual float intersect(const Ray& ray) const override {
-        if (fabs(ray.direction.y) < 1e-6f) return -1.0f; // 평행
+        if (fabs(ray.direction.y) < 1e-6f) return -1.0f;
         float t = (y - ray.origin.y) / ray.direction.y;
         return (t > 0.001f) ? t : -1.0f;
     }
 };
 
-// Camera 클래스: 카메라의 시점 및 뷰잉 영역 정보를 보유
+// Camera: 눈 위치와 뷰잉 영역을 이용해 픽셀에 대응하는 ray 생성
 class Camera {
 public:
-    glm::vec3 eye;
+    vec3 eye;
     float l, r, b, t, d;
-    Camera(const glm::vec3& e, float l_, float r_, float b_, float t_, float d_)
+    Camera(const vec3& e, float l_, float r_, float b_, float t_, float d_)
         : eye(e), l(l_), r(r_), b(b_), t(t_), d(d_) { }
-    // (i, j) 픽셀에 해당하는 eye ray 생성 (픽셀 중심 사용)
     Ray generateRay(int i, int j, int nx, int ny) const {
         float u = l + (r - l) * ((i + 0.5f) / float(nx));
         float v = b + (t - b) * ((j + 0.5f) / float(ny));
-        glm::vec3 imagePoint(u, v, -d);
+        vec3 imagePoint(u, v, -d);
         return Ray(eye, imagePoint - eye);
     }
 };
 
-// Scene 클래스: 장면 내 객체들을 관리하고, 주어진 ray와의 교차 검사를 수행
+// Scene: 장면 내 객체들을 보관하고, 주어진 ray와의 교차 중 가장 가까운 t값을 찾음
 class Scene {
 public:
     std::vector<Surface*> objects;
@@ -96,8 +94,6 @@ public:
         for (auto obj : objects)
             delete obj;
     }
-    // 주어진 Ray와의 교차 중 가장 가까운 t값을 포함하는 정보를 반환
-    // 교차하지 않으면 t는 음수
     float findNearest(const Ray& ray) const {
         float t_nearest = -1.0f;
         for (const auto obj : objects) {
@@ -109,21 +105,18 @@ public:
     }
 };
 
-// ---------------------------------------------------------------------
-// Global Variables
-// ---------------------------------------------------------------------
+// --------------------------
+// 전역 변수 및 렌더링 함수
+// --------------------------
 int Width = 512;
 int Height = 512;
 std::vector<float> OutputImage;
 Camera* camera = nullptr;
 Scene* scene = nullptr;
 
-// ---------------------------------------------------------------------
-// Render Function: 각 픽셀마다 ray 생성 후 교차 판별하여 흑백 출력
-// ---------------------------------------------------------------------
+// render(): 각 픽셀에 대해 ray 생성 후 교차 여부에 따라 흑백 출력
 void render() {
-    const int nx = 512;
-    const int ny = 512;
+    const int nx = 512, ny = 512;
     OutputImage.clear();
     OutputImage.resize(nx * ny * 3);
 
@@ -131,26 +124,24 @@ void render() {
         for (int i = 0; i < nx; ++i) {
             Ray ray = camera->generateRay(i, j, nx, ny);
             float t = scene->findNearest(ray);
-            int index = (j * nx + i) * 3;
-            if (t > 0.0f) {
-                // 교차하면 흰색
-                OutputImage[index] = 1.0f;
-                OutputImage[index + 1] = 1.0f;
-                OutputImage[index + 2] = 1.0f;
+            int idx = (j * nx + i) * 3;
+            if (t > 0.0f) { // 객체와 교차하면 흰색
+                OutputImage[idx] = 1.0f;
+                OutputImage[idx + 1] = 1.0f;
+                OutputImage[idx + 2] = 1.0f;
             }
-            else {
-                // 교차 없음 → 검은색
-                OutputImage[index] = 0.0f;
-                OutputImage[index + 1] = 0.0f;
-                OutputImage[index + 2] = 0.0f;
+            else {         // 교차하지 않으면 검은색
+                OutputImage[idx] = 0.0f;
+                OutputImage[idx + 1] = 0.0f;
+                OutputImage[idx + 2] = 0.0f;
             }
         }
     }
 }
 
-// ---------------------------------------------------------------------
-// Resize Callback: 윈도우 크기 변경 시 호출되어 뷰포트 재설정 및 재렌더링
-// ---------------------------------------------------------------------
+// --------------------------
+// GLFW 콜백 및 메인 함수
+// --------------------------
 void resize_callback(GLFWwindow*, int nw, int nh) {
     Width = nw;
     Height = nh;
@@ -162,15 +153,11 @@ void resize_callback(GLFWwindow*, int nw, int nh) {
     render();
 }
 
-// ---------------------------------------------------------------------
-// Main Function
-// ---------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     GLFWwindow* window;
-
     if (!glfwInit()) return -1;
 
-    window = glfwCreateWindow(Width, Height, "Ray Tracer", NULL, NULL);
+    window = glfwCreateWindow(Width, Height, "Simple Ray Tracer", NULL, NULL);
     if (!window) {
         glfwTerminate();
         return -1;
@@ -181,21 +168,19 @@ int main(int argc, char* argv[]) {
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glfwSetFramebufferSizeCallback(window, resize_callback);
 
-    // ---------------------------------------------------------------------
-    // 초기 장면 구성
-    // ---------------------------------------------------------------------
-    // 카메라: eye=(0,0,0), 뷰잉 영역: l=-0.1, r=0.1, b=-0.1, t=0.1, d=0.1
-    camera = new Camera(glm::vec3(0.0f, 0.0f, 0.0f), -0.1f, 0.1f, -0.1f, 0.1f, 0.1f);
+    // 카메라: eye = (0, 0, 0), 뷰잉 영역: l = -0.1, r = 0.1, b = -0.1, t = 0.1, d = 0.1
+    camera = new Camera(vec3(0.0f, 0.0f, 0.0f), -0.1f, 0.1f, -0.1f, 0.1f, 0.1f);
     scene = new Scene();
-    // 요구사항에 따른 객체 추가
+
+    // 장면 구성:
     // 평면 P: y = -2
     scene->objects.push_back(new Plane(-2.0f));
-    // Sphere S1: center (-4,0,-7), radius 1
-    scene->objects.push_back(new Sphere(glm::vec3(-4.0f, 0.0f, -7.0f), 1.0f));
-    // Sphere S2: center (0,0,-7), radius 2
-    scene->objects.push_back(new Sphere(glm::vec3(0.0f, 0.0f, -7.0f), 2.0f));
-    // Sphere S3: center (4,0,-7), radius 1
-    scene->objects.push_back(new Sphere(glm::vec3(4.0f, 0.0f, -7.0f), 1.0f));
+    // Sphere S1: center (-4, 0, -7), radius 1
+    scene->objects.push_back(new Sphere(vec3(-4.0f, 0.0f, -7.0f), 1.0f));
+    // Sphere S2: center (0, 0, -7), radius 2
+    scene->objects.push_back(new Sphere(vec3(0.0f, 0.0f, -7.0f), 2.0f));
+    // Sphere S3: center (4, 0, -7), radius 1
+    scene->objects.push_back(new Sphere(vec3(4.0f, 0.0f, -7.0f), 1.0f));
 
     resize_callback(NULL, Width, Height);
 
@@ -204,9 +189,7 @@ int main(int argc, char* argv[]) {
         glDrawPixels(Width, Height, GL_RGB, GL_FLOAT, &OutputImage[0]);
         glfwSwapBuffers(window);
         glfwPollEvents();
-
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, GL_TRUE);
     }
 
